@@ -4,6 +4,7 @@ import { run } from "../actions.js";
 import { makeSortable } from "../sortable.js";
 import { slider, setSlider } from "../components.js";
 import { reorderSubset } from "./dashboard.js";
+import { createAmbient } from "../ambient.js";
 
 const KEY = "studio-params";
 const defaults = { effect: "chase", duration: 4, spread: 1.4, fade: 0.65, trail: 0.35, direction: "forward", brightness: 100, color: "#ff7a1a", scope: "all" };
@@ -51,6 +52,15 @@ export function createStudio() {
   const startBtn = btn("Start", { cls: "primary", icon: "play", size: 16 }, () => start());
   const stopBtn = btn("Stop", { icon: "stop", size: 16 }, () => run("effect_stop"));
   const status = h("div", { class: "muted" });
+  const preview = h("div", { class: "studio-ambient-preview" });
+  let previewAmbient = null;
+
+  function syncPreview() {
+    if (!previewAmbient) previewAmbient = createAmbient(preview, { fps: 18 });
+    previewAmbient.setColor(params.color);
+    previewAmbient.setEnergy(state.effect ? 0.7 : 0.25);
+    previewAmbient.setHue(-1);
+  }
 
   function start() {
     localStorage.setItem(KEY, JSON.stringify(params));
@@ -58,12 +68,13 @@ export function createStudio() {
   }
   function changed() {
     localStorage.setItem(KEY, JSON.stringify(params));
+    syncPreview();
     if (state.effect) throttleLatest("fx", () => run("effect_start", { ...params }), 250);
   }
 
   const el = h("section", { class: "stack" },
     h("div", null, h("div", { class: "section-title", style: { marginTop: 0 } }, h("h2", null, "Your lights, in order"), h("span", { class: "muted", style: { fontSize: "12.5px" } }, "Drag to set the order. Effects travel along it.")), strip),
-    h("div", { class: "card" }, h("h3", null, "Effect"), fx),
+    h("div", { class: "card" }, h("h3", null, "Effect"), preview, fx),
     h("div", { class: "card" }, h("h3", null, "Fine-tune"), grid),
     h("div", { class: "row" }, startBtn, stopBtn, status));
 
@@ -106,6 +117,14 @@ export function createStudio() {
     startBtn.style.display = running ? "none" : "";
     stopBtn.style.display = running ? "" : "none";
     setText(status, running ? `Running ${state.effect.effect}. Changes apply live.` : "Frames are written straight to the lights, so what you see here is what they do.");
+    syncPreview();
   }
-  return { el, update };
+  return {
+    el,
+    update,
+    enter() { syncPreview(); previewAmbient && previewAmbient.resume(); },
+    leave() {
+      if (previewAmbient) { previewAmbient.destroy(); previewAmbient = null; }
+    },
+  };
 }

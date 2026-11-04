@@ -7,27 +7,56 @@ import { openOutputsPicker } from "./views/nowplaying.js";
 
 let root = null;
 let open = false;
+let lastFocus = null;
 
 export function isControlOpen() {
   return open;
 }
 
 export function closeControlCenter() {
-  if (!root) return;
+  if (!root || !open) return;
   root.classList.remove("on");
+  root.setAttribute("aria-hidden", "true");
+  root.removeAttribute("aria-modal");
   open = false;
+  document.removeEventListener("keydown", onKey);
+  if (lastFocus && typeof lastFocus.focus === "function") {
+    try { lastFocus.focus(); } catch (_) {}
+  }
+  lastFocus = null;
 }
 
 export function openControlCenter() {
   ensure();
+  lastFocus = document.activeElement;
   root.classList.add("on");
+  root.setAttribute("aria-hidden", "false");
+  root.setAttribute("aria-modal", "true");
   open = true;
   paint();
+  document.addEventListener("keydown", onKey);
+  requestAnimationFrame(() => {
+    const first = root._sheet.querySelector("button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])");
+    first && first.focus();
+  });
+}
+
+function onKey(e) {
+  if (e.key === "Escape") {
+    e.preventDefault();
+    closeControlCenter();
+  }
 }
 
 function ensure() {
   if (root) return root;
-  root = h("div", { id: "control-center", class: "control-center", "aria-hidden": "true" });
+  root = h("div", {
+    id: "control-center",
+    class: "control-center",
+    role: "dialog",
+    "aria-label": "Control Center",
+    "aria-hidden": "true",
+  });
   const sheet = h("div", { class: "cc-sheet" });
   root._sheet = sheet;
   root.append(h("div", { class: "cc-backdrop" }), sheet);
@@ -109,7 +138,6 @@ function paint() {
           closeControlCenter();
           (await import("./app.js")).enterKiosk();
         })));
-  root.setAttribute("aria-hidden", "false");
 }
 
 export function initControlCenter() {

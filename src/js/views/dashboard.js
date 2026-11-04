@@ -4,7 +4,6 @@ import { deviceCard, updateDeviceCard, toggle, slider, setSlider } from "../comp
 import { makeSortable } from "../sortable.js";
 import { applyScene, run, setDevice, fmtW, toggleDevice } from "../actions.js";
 import { openAddDevice } from "./devices.js";
-import { fmtEnergy } from "../charts.js";
 import { onDrop } from "./rooms.js";
 import { createPlan } from "./plan.js";
 import { createClimate } from "./climate.js";
@@ -12,6 +11,9 @@ import { createActivity } from "./activity.js";
 import { createNowPlaying, activeMedia } from "./nowplaying.js";
 import { PRESENCE, presenceMode, setPresence } from "../wall.js";
 import { call as hubCall } from "../api.js";
+import { createAmbient } from "../ambient.js";
+import { emptyBlock, illustHouse } from "../illustrations.js";
+import { roomMetaFor } from "../roommeta.js";
 
 export function reorderSubset(keys) {
   const all = state.devices.map((d) => d.id);
@@ -31,12 +33,8 @@ export function filterDevices(room) {
 }
 
 function roomIcon(name) {
-  if (/bed|sleep|guest/i.test(name)) return "moon";
-  if (/living|lounge|tv|family/i.test(name)) return "sofa";
-  if (/kitchen|dining/i.test(name)) return "sparkles";
-  if (/office|study|work/i.test(name)) return "devices";
   if (/fav/i.test(name)) return "star";
-  return "rooms";
+  return roomMetaFor(name, state.settings).icon || "rooms";
 }
 
 // ---------- room section ----------
@@ -90,6 +88,14 @@ function updateSection(sec, s) {
   }
   sec.dataset.roomKey = s.key;
   r.tiles.dataset.room = s.virtual ? "__virtual__" : s.name === "No room" ? "" : s.name;
+  if (!s.virtual && s.name && s.name !== "No room") {
+    const meta = roomMetaFor(s.name, state.settings);
+    sec.dataset.tint = meta.tint;
+    setClass(sec, "tinted", true);
+  } else {
+    sec.dataset.tint = "";
+    setClass(sec, "tinted", false);
+  }
   reconcile(r.tiles, devs, (d) => d.id, deviceCard, updateDeviceCard);
 }
 
@@ -163,24 +169,33 @@ function pickQuick(kind, limit) {
 export function createDashboard() {
   const banners = h("div", { class: "banners" });
 
-  // Hero: time + weather
+  // Hero: time + weather + presence + now playing (first viewport)
   const clockTime = h("div", { class: "hub-clock-time" });
   const clockDate = h("div", { class: "hub-clock-date" });
-  const clockGreeting = h("div", { class: "hub-greeting muted" });
-  const clockCard = h("div", { class: "panel hub-clock s6" },
-    clockGreeting, clockTime, clockDate);
+  const clockGreeting = h("div", { class: "hub-greeting" });
+  const clockBlock = h("div", { class: "home-hero-clock" }, clockGreeting, clockTime, clockDate);
 
-  const wTemp = h("div", { class: "hero-temp" });
-  const wLabel = h("div", { class: "hero-wlabel" });
-  const wRange = h("div", { class: "hero-range muted" });
-  const wStatus = h("div", { class: "hero-status" });
-  const weatherHero = h("div", { class: "panel weather-hero s6" },
-    h("div", { class: "grow" }, wTemp, wLabel, wRange),
-    wStatus);
+  const wTemp = h("span", { class: "hero-temp" });
+  const wLabel = h("span", { class: "hero-wlabel" });
+  const wRange = h("span", { class: "hero-range muted" });
+  const wStatus = h("span", { class: "hero-status" });
+  const weatherLine = h("div", { class: "home-hero-weather" }, wTemp, wLabel, wRange, wStatus);
 
-  const presenceBar = h("div", { class: "s12 presence-bar" });
+  const presenceBar = h("div", { class: "presence-bar" });
   const nowPlaying = createNowPlaying();
-  const npWrap = h("div", { class: "s12" }, nowPlaying.el);
+
+  const hero = h("div", { class: "home-hero" },
+    clockBlock, weatherLine, presenceBar, nowPlaying.el);
+
+  let ambient = null;
+  function ensureAmbient() {
+    if (ambient) return ambient;
+    ambient = createAmbient(hero, { fps: 24 });
+    return ambient;
+  }
+  function destroyAmbient() {
+    if (ambient) { ambient.destroy(); ambient = null; }
+  }
 
   const boardList = h("ul", { class: "board-list" });
   const boardInput = h("input", { type: "text", placeholder: "Add a note for the household…", class: "board-input" });
@@ -234,12 +249,16 @@ export function createDashboard() {
 
   const tabs = h("div", { class: "tabs", role: "tablist", "aria-label": "Room filter" });
   const sections = h("div", { class: "rooms-wrap" });
-  const empty = h("div", { class: "empty" },
-    h("h3", null, "No devices yet"),
-    h("p", null, "Scan your network to find WiZ lights and plugs, or connect Home Assistant."),
-    h("div", { class: "row", style: { justifyContent: "center", marginTop: "14px" } },
+  const empty = emptyBlock({
+    title: "No devices yet",
+    body: "Scan your network to find WiZ lights and plugs, or connect Home Assistant.",
+    illust: illustHouse(72),
+    actions: [
       btn("Scan network", { cls: "primary", icon: "search", size: 16 }, () => openAddDevice("scan")),
-      btn("Add by IP", { icon: "plus", size: 16 }, () => openAddDevice("ip"))));
+      btn("Add by IP", { icon: "plus", size: 16 }, () => openAddDevice("ip")),
+    ],
+  });
+  empty.classList.add("s12");
 
   const plan = createPlan((key) => {
     const target = key === "__none" ? "unassigned" : key;
@@ -259,25 +278,25 @@ export function createDashboard() {
 
   const planWrap = h("div", { class: "s8" }, plan.el);
   const side = h("div", { class: "s4 col" }, climate.el, activity.el);
-  const roomsHead = h("div", { class: "s12" },
-    h("div", { class: "section-title", style: { flexWrap: "wrap" } },
+  const roomsHead = h("div", { class: "s12 rooms-sticky" },
+    h("div", { class: "section-title", style: { flexWrap: "wrap", marginTop: 0 } },
       h("h2", null, "Rooms"), tabs, h("div", { class: "grow" }),
       btn("All on", { cls: "small", icon: "sun", size: 14 }, () => allSet(true)),
       btn("All off", { cls: "small", icon: "power", size: 14 }, () => allSet(false))));
 
-  const el = h("section", { class: "home" },
+  const below = h("div", { class: "home-below" },
     h("div", { class: "s12" }, banners),
-    presenceBar,
-    clockCard,
-    weatherHero,
-    npWrap,
     h("div", { class: "s12 kpis" }, kLights, kPlugs, kPower, kOnline),
     boardPanel,
     securityGlance,
     lightsPanel,
     plugsPanel,
     scenesWrap,
-    planWrap, side,
+    planWrap, side);
+
+  const el = h("section", { class: "home" },
+    hero,
+    below,
     roomsHead,
     h("div", { class: "s12" }, sections, empty));
 
@@ -305,6 +324,7 @@ export function createDashboard() {
   let lastClockMin = "";
 
   function update() {
+    ensureAmbient();
     const s = stats();
     const e = state.energy;
     const lights = state.devices.filter((d) => d.kind === "light");
@@ -329,7 +349,10 @@ export function createDashboard() {
       wTemp.replaceChildren(String(Math.round(w.temp)), h("small", null, unit));
       setText(wLabel, w.label || "");
       setText(wRange, w.high != null ? `H ${Math.round(w.high)}${unit} · L ${Math.round(w.low)}${unit}` : "");
-      if (w.period) document.documentElement.dataset.period = w.period;
+      if (w.period) {
+        document.documentElement.dataset.period = w.period;
+        ambient && ambient.setPeriod(w.period);
+      }
     } else {
       setText(wTemp, "–");
       setText(wLabel, "Weather");
@@ -344,6 +367,9 @@ export function createDashboard() {
     setText(wStatus, bits.join(" · ") || "All quiet");
 
     nowPlaying.update();
+    if (ambient) {
+      ambient.setEnergy(media && media.playing ? 0.55 : s.on > 0 ? Math.min(0.4, s.on * 0.06) : 0);
+    }
 
     // Presence
     const mode = presenceMode();
@@ -482,5 +508,10 @@ export function createDashboard() {
     if (performance.now() - lastEnergy > 15000) { lastEnergy = performance.now(); refreshEnergy(); }
   }
 
-  return { el, update };
+  return {
+    el,
+    update,
+    enter() { ensureAmbient(); ambient && ambient.resume(); },
+    leave() { destroyAmbient(); },
+  };
 }

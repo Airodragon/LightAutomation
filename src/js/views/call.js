@@ -3,6 +3,7 @@ import { state } from "../store.js";
 import { call as hubCall } from "../api.js";
 import { clientId, clientName, setClientName, onlinePeers } from "../wall.js";
 import * as rtc from "../webrtc.js";
+import { emptyBlock, illustNoPeer } from "../illustrations.js";
 
 const EXTERNAL = [
   { id: "facetime", name: "FaceTime" },
@@ -34,7 +35,7 @@ export function createCall() {
   const allCallBtn = btn("All-call", { cls: "small", icon: "wifi", size: 14 }, () => startAllCall());
   const camReady = h("span", { class: "pill ok call-ready-pill", style: { display: "none" } }, "Camera ready");
 
-  const el = h("section", { class: "stack call-page" },
+  const stageCol = h("div", { class: "call-stage-col stack" },
     h("div", { class: "section-title" },
       h("h2", null, "Calls"),
       h("div", { class: "grow" }),
@@ -43,8 +44,10 @@ export function createCall() {
       allCallBtn),
     stage,
     status,
-    controls,
-    h("div", { class: "section-title" }, h("h2", null, "Wall screens")),
+    controls);
+
+  const sideCol = h("div", { class: "call-side" },
+    h("div", { class: "section-title", style: { marginTop: 0 } }, h("h2", null, "Wall screens")),
     clients,
     h("div", { class: "section-title" }, h("h2", null, "People"), h("div", { class: "grow" }),
       btn("Add contact", { cls: "small", icon: "plus", size: 14 }, () => editContact(null))),
@@ -58,6 +61,9 @@ export function createCall() {
       btn("Rename this screen", { cls: "small" }, () => renameScreen()),
       btn("FaceTime…", { cls: "small ghost" }, () => openExternal("facetime", null)),
       btn("WhatsApp…", { cls: "small ghost" }, () => openExternal("whatsapp", null))));
+
+  const el = h("section", { class: "stack call-page" },
+    h("div", { class: "call-layout" }, stageCol, sideCol));
 
   let muted = false;
   let videoOff = false;
@@ -86,10 +92,10 @@ export function createCall() {
     peerLabel.style.display = label ? "" : "none";
   }
 
-  const muteBtn = btn("Mute", { cls: "small", icon: "power", size: 14 }, () => {
+  const muteBtn = btn("Mute", { cls: "small", icon: "mic", size: 14 }, () => {
     muted = !muted;
     rtc.toggleMute(muted);
-    setText(muteBtn, muted ? "Unmute" : "Mute");
+    muteBtn.replaceChildren(icon(muted ? "mic-off" : "mic", 14), muted ? "Unmute" : "Mute");
     setText(status, muted ? "Muted" : inCall ? "On call" : "Ready");
   });
   const camBtn = btn("Camera", { cls: "small", icon: "film", size: 14 }, () => {
@@ -198,7 +204,7 @@ export function createCall() {
     setPermUi(false);
     setStageMode({});
     setText(status, "");
-    setText(muteBtn, "Mute");
+    muteBtn.replaceChildren(icon("mic", 14), "Mute");
     muted = false;
     videoOff = false;
   }
@@ -290,11 +296,11 @@ export function createCall() {
         setText(b.querySelector(".s"), c.room || "Online now");
       });
     if (!walls.length) {
-      clients.replaceChildren(
-        h("div", { class: "call-empty-peers" },
-          h("p", { class: "muted" }, "No other screens online."),
-          h("p", { class: "muted" }, "Open Lights Studio on an iPad or phone (Settings → Wall screen URL), then call from here.")),
-      );
+      clients.replaceChildren(emptyBlock({
+        title: "No other screens online",
+        body: "Open Lights Studio on an iPad or phone (Settings → Wall screen URL), then call from here.",
+        illust: illustNoPeer(56),
+      }));
     }
 
     const list = state.settings.contacts || [];

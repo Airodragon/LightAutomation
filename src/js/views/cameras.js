@@ -2,6 +2,7 @@ import { h, icon, reconcile, setText, setClass, btn, modal } from "../dom.js";
 import { state, L, notify } from "../store.js";
 import { run, setDevice } from "../actions.js";
 import { openAddDevice } from "./devices.js";
+import { emptyBlock, illustNoCamera } from "../illustrations.js";
 
 function cameras() {
   return state.devices.filter((d) => d.kind === "camera" || d.caps.includes("camera"));
@@ -34,10 +35,12 @@ function streamUrl(d) {
 export function createCameras() {
   const grid = h("div", { class: "cam-grid" });
   const security = h("div", { class: "security-strip" });
-  const empty = h("div", { class: "empty" },
-    h("h3", null, "No cameras yet"),
-    h("p", null, "Import camera, lock, and alarm entities from Home Assistant. Paste a go2rtc or MJPEG URL in a camera’s note for a direct stream."),
-    btn("Open devices", { cls: "primary", icon: "devices", size: 16 }, () => openAddDevice("ha")));
+  const empty = emptyBlock({
+    title: "No cameras yet",
+    body: "Import camera, lock, and alarm entities from Home Assistant. Paste a go2rtc or MJPEG URL in a camera’s note for a direct stream.",
+    illust: illustNoCamera(64),
+    actions: [btn("Open devices", { cls: "primary", icon: "devices", size: 16 }, () => openAddDevice("ha"))],
+  });
 
   const el = h("section", { class: "stack" },
     h("div", { class: "section-title" }, h("h2", null, "Security"), h("div", { class: "grow" }),
@@ -47,11 +50,12 @@ export function createCameras() {
     grid, empty);
 
   function makeCam() {
-    const img = h("div", { class: "cam-frame" }, icon("film", 28));
+    const badge = h("span", { class: "cam-badge" });
+    const img = h("div", { class: "cam-frame" }, badge, icon("film", 28));
     const name = h("div", { class: "t" });
     const sub = h("div", { class: "s" });
     const card = h("button", { class: "cam-card panel", type: "button" }, img, h("div", { class: "cam-meta" }, name, sub));
-    card._r = { img, name, sub };
+    card._r = { img, name, sub, badge };
     card.addEventListener("click", () => openLive(card._d));
     return card;
   }
@@ -59,18 +63,36 @@ export function createCameras() {
   function updateCam(card, d) {
     card._d = d;
     const l = L(d.id);
+    const online = !!l.online;
     setText(card._r.name, d.name);
-    setText(card._r.sub, l.value || (l.online ? "Live" : "Offline"));
-    setClass(card, "offline", !l.online);
+    setText(card._r.sub, l.value || (online ? "Streaming" : "Unavailable"));
+    setClass(card, "offline", !online);
+    setText(card._r.badge, online ? "Live" : "Offline");
+    setClass(card._r.badge, "live", online);
+    setClass(card._r.badge, "offline", !online);
     const url = streamUrl(d);
-    if (url && card._r.img.dataset.url !== url) {
-      card._r.img.dataset.url = url;
-      card._r.img.style.backgroundImage = `url(${JSON.stringify(url)})`;
-      card._r.img.replaceChildren();
+    const frame = card._r.img;
+    if (url && frame.dataset.url !== url) {
+      frame.dataset.url = url;
+      setClass(frame, "loading", true);
+      const probe = new Image();
+      probe.onload = () => {
+        frame.style.backgroundImage = `url(${JSON.stringify(url)})`;
+        // Keep badge; clear placeholder icon
+        frame.replaceChildren(card._r.badge);
+        setClass(frame, "loading", false);
+      };
+      probe.onerror = () => {
+        frame.style.backgroundImage = "";
+        frame.replaceChildren(card._r.badge, icon("film", 28));
+        setClass(frame, "loading", false);
+      };
+      probe.src = url;
     } else if (!url) {
-      card._r.img.dataset.url = "";
-      card._r.img.style.backgroundImage = "";
-      card._r.img.replaceChildren(icon("film", 28));
+      frame.dataset.url = "";
+      frame.style.backgroundImage = "";
+      setClass(frame, "loading", false);
+      frame.replaceChildren(card._r.badge, icon("film", 28));
     }
   }
 

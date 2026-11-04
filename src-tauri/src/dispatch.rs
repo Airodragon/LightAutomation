@@ -180,6 +180,9 @@ pub fn dispatch(hub: &Arc<Hub>, cmd: &str, a: Value, remote: bool) -> Result<Val
                         sc.target = format!("room:{to}");
                     }
                 }
+                if let Some(meta) = c.settings.room_meta.remove(&from) {
+                    c.settings.room_meta.insert(to.clone(), meta);
+                }
             }
             for d in hub.devices.lock().values_mut() {
                 if d.room == from {
@@ -192,7 +195,11 @@ pub fn dispatch(hub: &Arc<Hub>, cmd: &str, a: Value, remote: bool) -> Result<Val
         }
         "room_delete" => {
             let n = need(&a, "name")?;
-            hub.config.lock().rooms.retain(|r| *r != n);
+            {
+                let mut c = hub.config.lock();
+                c.rooms.retain(|r| *r != n);
+                c.settings.room_meta.remove(&n);
+            }
             for d in hub.devices.lock().values_mut() {
                 if d.room == n {
                     d.room = String::new();
@@ -218,6 +225,47 @@ pub fn dispatch(hub: &Arc<Hub>, cmd: &str, a: Value, remote: bool) -> Result<Val
                 c.rooms = next;
             }
             hub.mark_config();
+            snap(hub)
+        }
+        "rooms_apply" => {
+            let names: Vec<String> = a
+                .get("names")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                .unwrap_or_default();
+            let names: Vec<String> = names
+                .into_iter()
+                .map(|n| n.trim().to_string())
+                .filter(|n| !n.is_empty())
+                .collect();
+            if names.is_empty() {
+                return Err("Need at least one room".into());
+            }
+            let layout = s(&a, "layout").unwrap_or_default();
+            let meta_in = a.get("room_meta").cloned();
+            {
+                let mut c = hub.config.lock();
+                c.rooms = names.clone();
+                if !layout.is_empty() {
+                    c.settings.home_layout_id = layout;
+                }
+                c.settings.home_setup_done = true;
+                if let Some(v) = meta_in {
+                    if let Ok(m) =
+                        serde_json::from_value::<std::collections::HashMap<String, crate::model::RoomMeta>>(v)
+                    {
+                        c.settings.room_meta = m;
+                    }
+                } else {
+                    c.settings.room_meta.retain(|k, _| names.contains(k));
+                }
+            }
+            for d in hub.devices.lock().values_mut() {
+                if !d.room.is_empty() && !names.contains(&d.room) {
+                    d.room = String::new();
+                }
+            }
+            hub.mark_config();
+            hub.mark_devices();
             snap(hub)
         }
 
@@ -554,6 +602,19 @@ pub fn dispatch(hub: &Arc<Hub>, cmd: &str, a: Value, remote: bool) -> Result<Val
                 if let Some(v) = a.get("board_notes").cloned() {
                     if let Ok(notes) = serde_json::from_value::<Vec<String>>(v) {
                         st.board_notes = notes;
+                    }
+                }
+                if let Some(v) = a.get("home_setup_done").and_then(|v| v.as_bool()) {
+                    st.home_setup_done = v;
+                }
+                if let Some(v) = s(&a, "home_layout_id") {
+                    st.home_layout_id = v;
+                }
+                if let Some(v) = a.get("room_meta").cloned() {
+                    if let Ok(m) =
+                        serde_json::from_value::<std::collections::HashMap<String, crate::model::RoomMeta>>(v)
+                    {
+                        st.room_meta = m;
                     }
                 }
                 if !remote {

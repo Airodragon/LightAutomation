@@ -1,14 +1,24 @@
-// Floor plan: an architectural overview of the home built from your rooms and devices.
-// Lights glow in their real colour; click a lamp to toggle it, click a room to focus it.
+// Floor plan: 2.5D overview with tinted rooms and kind-specific device glyphs.
 import { h } from "../dom.js";
 import { state, L, glowColor } from "../store.js";
 import { toggleDevice } from "../actions.js";
+import { roomMetaFor, templateCells } from "../roommeta.js";
 
 const CW = 230;
 const CH = 170;
 const PAD = 14;
+const PLAN_W = 1000;
+const PLAN_H = 600;
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+const TINT_FILL = {
+  sage: "rgba(79, 209, 165, 0.14)",
+  dusk: "rgba(140, 110, 210, 0.16)",
+  sky: "rgba(90, 170, 230, 0.15)",
+  warm: "rgba(240, 180, 90, 0.14)",
+  slate: "rgba(120, 135, 155, 0.12)",
+};
 
 // ---------- furniture (stroke-only line art, local room coordinates) ----------
 
@@ -44,9 +54,7 @@ function furniture(name, w, h) {
   return r(w * 0.34, h - 62, w * 0.32, 22, 5) + plant(w - 22, h - 22);
 }
 
-// ---------- layout ----------
-
-function layout(rooms) {
+function gridLayout(rooms) {
   const n = rooms.length;
   const cols = n <= 1 ? 1 : n <= 4 ? 2 : 3;
   const rows = Math.ceil(n / cols);
@@ -60,21 +68,74 @@ function layout(rooms) {
   return { cells: out, width: W + PAD * 2, height: rows * CH + PAD * 2 };
 }
 
+function layout(rooms) {
+  const tpl = templateCells(state.settings.home_layout_id || "", rooms.length);
+  if (!tpl) return gridLayout(rooms);
+  // Scale template (1000×600) into viewBox with padding; grow height if strip overflowed
+  let maxY = 0;
+  const cells = tpl.map((c, i) => {
+    const room = rooms[i];
+    if (!room) return null;
+    maxY = Math.max(maxY, c.y + c.h);
+    return { room, x: c.x, y: c.y, w: c.w, h: c.h };
+  }).filter(Boolean);
+  const height = Math.max(PLAN_H, maxY + 40);
+  return { cells, width: PLAN_W, height };
+}
+
 function colorOf(d) {
   const l = L(d.id);
   return glowColor(d, l) || (d.kind === "light" ? "#ffd27a" : "#4fd1a5");
+}
+
+function deviceKind(d) {
+  const n = `${d.kind} ${d.name}`;
+  if (/fan/i.test(n) || d.kind === "fan") return "fan";
+  if (d.kind === "climate" || /ac|air.?cond|hvac|thermostat/i.test(n)) return "climate";
+  if (d.kind === "light") return "light";
+  if (d.kind === "plug" || d.kind === "switch") return "plug";
+  if (d.kind === "media") return "media";
+  if (d.kind === "camera" || d.caps.includes("camera")) return "camera";
+  if (d.kind === "lock" || d.caps.includes("lock")) return "lock";
+  return "other";
+}
+
+function glyph(kind, x, y, on) {
+  const o = on ? "1" : "0.55";
+  if (kind === "light") {
+    return `<circle class="lamp-ring" cx="${x}" cy="${y}" r="8"/><circle class="lamp-dot" cx="${x}" cy="${y}" r="4.5"/>`;
+  }
+  if (kind === "climate") {
+    return `<circle class="lamp-ring" cx="${x}" cy="${y}" r="9"/><path class="lamp-dot" d="M${x} ${y - 6} V${y + 6} M${x - 5.5} ${y - 3} L${x + 5.5} ${y + 3} M${x + 5.5} ${y - 3} L${x - 5.5} ${y + 3}" fill="none" stroke="currentColor" stroke-width="1.4" opacity="${o}"/>`;
+  }
+  if (kind === "fan") {
+    return `<circle class="lamp-ring" cx="${x}" cy="${y}" r="9"/><circle class="lamp-dot" cx="${x}" cy="${y}" r="2.2"/><path class="furn" d="M${x} ${y - 7} Q${x + 6} ${y - 2} ${x} ${y} Q${x - 6} ${y - 2} ${x} ${y - 7}" opacity="${o}"/><path class="furn" d="M${x + 6} ${y + 3} Q${x} ${y + 7} ${x} ${y} Q${x + 7} ${y - 1} ${x + 6} ${y + 3}" opacity="${o}"/>`;
+  }
+  if (kind === "media") {
+    return `<rect class="lamp-ring" x="${x - 8}" y="${y - 6}" width="16" height="12" rx="3"/><path class="furn" d="M${x - 2} ${y - 2} L${x + 4} ${y} L${x - 2} ${y + 2} Z"/>`;
+  }
+  if (kind === "camera") {
+    return `<rect class="lamp-ring" x="${x - 8}" y="${y - 5}" width="12" height="10" rx="2"/><path class="furn" d="M${x + 4} ${y - 2} L${x + 9} ${y - 5} V${y + 5} L${x + 4} ${y + 2}"/><circle class="lamp-dot" cx="${x - 2}" cy="${y}" r="2"/>`;
+  }
+  if (kind === "lock") {
+    return `<rect class="lamp-ring" x="${x - 5}" y="${y - 2}" width="10" height="8" rx="2"/><path class="furn" d="M${x - 3} ${y - 2} V${y - 5} A3 3 0 0 1 ${x + 3} ${y - 5} V${y - 2}"/>`;
+  }
+  // plug / other
+  return `<rect class="lamp-ring" x="${x - 7}" y="${y - 7}" width="14" height="14" rx="4"/><rect class="lamp-dot" x="${x - 3.5}" y="${y - 3.5}" width="7" height="7" rx="2"/>`;
 }
 
 function build(rooms, selected) {
   const { cells, width, height } = layout(rooms);
   let body = "";
   cells.forEach(({ room, x, y, w, h: hh }, idx) => {
-    const lit = room.devices.filter((d) => L(d.id).on && L(d.id).online && d.kind === "light");
+    const lit = room.devices.filter((d) => L(d.id).on && L(d.id).online && deviceKind(d) === "light");
     const on = room.devices.filter((d) => L(d.id).on && L(d.id).online).length;
     const id = `pc${idx}`;
-    let g = `<g class="proom${selected === room.key ? " sel" : ""}" transform="translate(${x} ${y})">`;
-    g += `<defs><clipPath id="${id}"><rect width="${w}" height="${hh}" rx="2"/></clipPath></defs>`;
-    g += `<rect class="room-bg" width="${w}" height="${hh}"/>`;
+    const meta = roomMetaFor(room.name, state.settings);
+    const fill = TINT_FILL[meta.tint] || TINT_FILL.slate;
+    let g = `<g class="proom${selected === room.key ? " sel" : ""}" data-tint="${esc(meta.tint)}" transform="translate(${x} ${y})" style="animation-delay:${idx * 40}ms">`;
+    g += `<defs><clipPath id="${id}"><rect width="${w}" height="${hh}" rx="10"/></clipPath></defs>`;
+    g += `<rect class="room-bg" width="${w}" height="${hh}" rx="10" fill="${fill}"/>`;
     // light wash from every lit lamp
     g += `<g clip-path="url(#${id})" class="room-lit">`;
     const perRow = Math.max(1, Math.floor((w - 40) / 38));
@@ -82,51 +143,48 @@ function build(rooms, selected) {
     const pos = (i) => {
       const row = Math.floor(i / perRow);
       const inRow = Math.min(perRow, total - row * perRow);
-      return { x: (w - inRow * 38) / 2 + 19 + (i % perRow) * 38, y: 52 + row * 30 };
+      return { x: (w - inRow * 38) / 2 + 19 + (i % perRow) * 38, y: Math.min(hh - 28, 52 + row * 30) };
     };
     room.devices.forEach((d, i) => {
       const l = L(d.id);
-      if (d.kind === "light" && l.on && l.online) {
+      if (deviceKind(d) === "light" && l.on && l.online) {
         const p = pos(i);
-        g += `<circle cx="${p.x}" cy="${p.y}" r="${Math.min(w, hh) * 0.5}" fill="${colorOf(d)}" opacity="${0.07 + ((l.brightness ?? 60) / 100) * 0.13}" style="filter:blur(12px)"/>`;
+        g += `<circle cx="${p.x}" cy="${p.y}" r="${Math.min(w, hh) * 0.45}" fill="${colorOf(d)}" opacity="${0.07 + ((l.brightness ?? 60) / 100) * 0.13}" style="filter:blur(12px)"/>`;
       }
     });
     g += `</g>`;
-    g += `<g transform="translate(0 0)">${furniture(room.name, w, hh)}</g>`;
-    // devices
+    if (hh > 100 && w > 120) g += `<g transform="translate(0 0)" opacity="0.85">${furniture(room.name, w, hh)}</g>`;
     room.devices.forEach((d, i) => {
       const l = L(d.id);
       const p = pos(i);
+      const kind = deviceKind(d);
       const isOn = !!l.on && !!l.online;
-      const cls = `lamp${isOn ? " on" : ""}${l.online ? "" : " off-line"}`;
+      const cls = `lamp lamp-${kind}${isOn ? " on" : ""}${l.online ? "" : " off-line"}`;
       const label = `${d.name}: ${!l.online ? "offline" : isOn ? "on" : "off"}. Press to toggle.`;
-      g += `<g class="${cls}" style="--c:${colorOf(d)};cursor:pointer" data-dev="${esc(d.id)}" role="button" tabindex="0" aria-label="${esc(label)}">`;
+      g += `<g class="${cls}" style="--c:${colorOf(d)};cursor:pointer;color:var(--c)" data-dev="${esc(d.id)}" role="button" tabindex="0" aria-label="${esc(label)}">`;
       g += `<title>${esc(d.name)}</title><circle r="13" cx="${p.x}" cy="${p.y}" fill="transparent"/>`;
-      g += d.kind === "light"
-        ? `<circle class="lamp-ring" cx="${p.x}" cy="${p.y}" r="8"/><circle class="lamp-dot" cx="${p.x}" cy="${p.y}" r="4.5"/>`
-        : `<rect class="lamp-ring" x="${p.x - 7}" y="${p.y - 7}" width="14" height="14" rx="4"/><rect class="lamp-dot" x="${p.x - 3.5}" y="${p.y - 3.5}" width="7" height="7" rx="2"/>`;
+      g += glyph(kind, p.x, p.y, isOn);
       g += `</g>`;
     });
     g += `<text class="rname" x="12" y="22">${esc(room.name)}</text>`;
-    g += `<text class="rsub" x="${w - 12}" y="22" text-anchor="end">${room.devices.length} device${room.devices.length === 1 ? "" : "s"}${on ? " · " + on + " on" : ""}</text>`;
+    g += `<text class="rsub" x="${w - 12}" y="22" text-anchor="end">${room.devices.length} device${room.devices.length === 1 ? "" : "s"}${on ? " · " + on + " on" : ""}${lit.length ? " · lit" : ""}</text>`;
     g += `<g data-room="${esc(room.key)}" role="button" tabindex="0" aria-label="Show ${esc(room.name)}"><rect class="room-hit" width="${w}" height="${hh}" style="pointer-events:none"/></g>`;
-    g += `<rect class="room-ring" width="${w}" height="${hh}"/>`;
+    g += `<rect class="room-ring" width="${w}" height="${hh}" rx="10"/>`;
     g += `</g>`;
     body += g;
   });
-  return `<svg class="plan-svg" viewBox="0 0 ${width} ${height}" role="group" aria-label="Floor plan of your home">` +
-    `<rect class="wall" x="${PAD - 3}" y="${PAD - 3}" width="${width - PAD * 2 + 6}" height="${height - PAD * 2 + 6}" rx="8"/>` + body + `</svg>`;
+  return `<svg class="plan-svg plan-enter" viewBox="0 0 ${width} ${height}" role="group" aria-label="Floor plan of your home">` +
+    `<rect class="wall" x="${PAD - 3}" y="${PAD - 3}" width="${width - PAD * 2 + 6}" height="${height - PAD * 2 + 6}" rx="12"/>` + body + `</svg>`;
 }
 
 export function createPlan(onRoom) {
-  const host = h("div");
+  const host = h("div", { class: "plan-host" });
   const el = h("div", { class: "panel plan-card" },
     h("div", { class: "panel-head" }, h("h3", null, "Floor plan"), h("div", { class: "grow" }),
-      h("span", { class: "eyebrow" }, "Tap a lamp to toggle · tap a room to focus")),
+      h("span", { class: "eyebrow" }, "Tap a device to toggle · tap a room to focus")),
     host);
   let sig = "";
 
-  // The whole room area is clickable; lamps win because they sit above it.
   host.addEventListener("click", (e) => {
     const lamp = e.target.closest("[data-dev]");
     if (lamp) return toggleDevice(lamp.dataset.dev);
@@ -145,7 +203,9 @@ export function createPlan(onRoom) {
   });
 
   function update(rooms, selected) {
-    const s = JSON.stringify([selected, rooms.map((r) => [r.key, r.name, r.devices.map((d) => { const l = L(d.id); return [d.id, d.name, d.kind, !!l.on, !!l.online, l.brightness, colorOf(d)]; })])]);
+    const layoutId = state.settings.home_layout_id || "";
+    const metaSig = JSON.stringify(state.settings.room_meta || {});
+    const s = JSON.stringify([selected, layoutId, metaSig, rooms.map((r) => [r.key, r.name, r.devices.map((d) => { const l = L(d.id); return [d.id, d.name, d.kind, !!l.on, !!l.online, l.brightness, colorOf(d)]; })])]);
     if (s === sig) return;
     sig = s;
     host.innerHTML = build(rooms, selected);

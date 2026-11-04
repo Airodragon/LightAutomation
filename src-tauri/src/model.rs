@@ -205,6 +205,20 @@ pub struct Settings {
     pub contacts: Vec<Contact>,
     /// Named wall screens enrolled with the hub.
     pub wall_clients: Vec<WallClient>,
+    /// First-run home arrangement wizard completed.
+    pub home_setup_done: bool,
+    /// Floor-plan template id: studio | 1bhk | 2bhk | open | custom
+    pub home_layout_id: String,
+    /// Per-room tint/icon customization keyed by room name.
+    pub room_meta: std::collections::HashMap<String, RoomMeta>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RoomMeta {
+    /// sage | dusk | sky | warm | slate
+    pub tint: String,
+    pub icon: String,
 }
 
 impl Default for Settings {
@@ -228,6 +242,9 @@ impl Default for Settings {
             board_notes: vec![],
             contacts: vec![],
             wall_clients: vec![],
+            home_setup_done: false,
+            home_layout_id: String::new(),
+            room_meta: std::collections::HashMap::new(),
         }
     }
 }

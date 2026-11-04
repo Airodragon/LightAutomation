@@ -4,11 +4,11 @@ import { call, isTauri, openUrl } from "./api.js";
 import { state, notify } from "./store.js";
 
 function openPrivacy(pane) {
-  // macOS System Settings deep links
+  // macOS Sequoia+ Privacy & Security panes (legacy URLs open a blank alert)
   const urls = {
-    camera: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera",
-    microphone: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
-    location: "x-apple.systempreferences:com.apple.preference.security?Privacy_LocationServices",
+    camera: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Camera",
+    microphone: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Microphone",
+    location: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_LocationServices",
   };
   const url = urls[pane] || urls.camera;
   if (isTauri) openUrl(url);
@@ -104,18 +104,22 @@ export async function requestLocation({ explain = true, force = false } = {}) {
         resolve({ lat, lon });
       },
       (err) => {
-        if (err.code === 1) {
-          modal(
-            "Location blocked",
-            h("div", null,
-              h("p", { class: "muted", style: { fontSize: "13.5px", marginBottom: "10px" } },
-                "Location permission was denied. Enable it in System Settings → Privacy & Security → Location Services for Lights Studio, or enter coordinates in Settings."),
-              btn("Open Location settings", { cls: "small" }, () => openPrivacy("location"))),
-            [(close) => btn("OK", { cls: "primary" }, close)],
-          );
-        } else {
-          toast("Could not read location — you can set it in Settings", "err");
-        }
+        // Dev / unsigned builds often never appear under Location Services.
+        // Weather still works via IP geolocation — guide people to manual coords.
+        modal(
+          "Set weather location",
+          h("div", null,
+            h("p", { class: "muted", style: { fontSize: "13.5px", marginBottom: "10px", lineHeight: "1.45" } },
+              err.code === 1
+                ? "macOS didn’t grant location to this build (common in development). Weather still works from your IP — or enter latitude and longitude in Settings for a precise spot."
+                : "Couldn’t read GPS. Weather still works from your IP — or enter coordinates in Settings."),
+            h("div", { class: "row", style: { flexWrap: "wrap", gap: "8px" } },
+              btn("Open Settings", { cls: "primary small" }, () => {
+                location.hash = "#/settings";
+              }),
+              btn("Location Services…", { cls: "small" }, () => openPrivacy("location")))),
+          [(close) => btn("OK", { cls: "primary" }, close)],
+        );
         resolve(null);
       },
       { enableHighAccuracy: false, timeout: 12000, maximumAge: 60_000 },

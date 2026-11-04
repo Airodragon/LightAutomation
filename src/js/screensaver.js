@@ -3,10 +3,12 @@
 import { h, setText } from "./dom.js";
 import { state, stats, refreshWeather } from "./store.js";
 import { activeMedia } from "./views/nowplaying.js";
+import { createAmbient } from "./ambient.js";
 
 let root = null;
 let clockTimer = null;
 let onDismiss = null;
+let ambient = null;
 
 function ensure() {
   if (root) return root;
@@ -26,14 +28,16 @@ function ensure() {
     title: "Wake display",
     "aria-label": "Wake display",
   });
+  const ambientHost = h("div", { class: "ss-ambient" });
   const orbs = h("div", { class: "ss-orbs" }, h("i"), h("i"), h("i"));
   root.replaceChildren(
+    ambientHost,
     orbs,
     h("div", { class: "ss-center" }, time, date, weather, status),
     hint,
     handle
   );
-  root._els = { time, date, weather, status, handle };
+  root._els = { time, date, weather, status, handle, ambientHost, orbs };
   const wake = (e) => {
     e && e.preventDefault && e.preventDefault();
     hide();
@@ -51,6 +55,24 @@ function ensure() {
     else wake(e);
   });
   return root;
+}
+
+function mountAmbient() {
+  const { ambientHost, orbs } = root._els;
+  if (ambient) return;
+  try {
+    ambient = createAmbient(ambientHost, { fps: 12, className: "ambient-layer" });
+    orbs.classList.remove("fallback");
+  } catch (_) {
+    orbs.classList.add("fallback");
+  }
+}
+
+function tearAmbient() {
+  if (ambient) {
+    ambient.destroy();
+    ambient = null;
+  }
 }
 
 function tick() {
@@ -78,7 +100,13 @@ function tick() {
   }
   if (s.total && s.online < s.total) bits.push(`${s.total - s.online} offline`);
   setText(status, bits.join("  ·  ") || "All quiet");
-  if (w && w.period) document.documentElement.dataset.period = w.period;
+  if (w && w.period) {
+    document.documentElement.dataset.period = w.period;
+    ambient && ambient.setPeriod(w.period);
+  }
+  if (ambient) {
+    ambient.setEnergy(media && media.playing ? 0.4 : s.on > 0 ? 0.2 : 0);
+  }
 }
 
 export function show(dismissCb) {
@@ -87,6 +115,7 @@ export function show(dismissCb) {
   el.classList.add("on");
   el.setAttribute("aria-hidden", "false");
   document.body.classList.add("screensaver-on");
+  mountAmbient();
   refreshWeather();
   tick();
   clearInterval(clockTimer);
@@ -104,6 +133,7 @@ export function hide() {
   document.body.classList.remove("screensaver-on");
   clearInterval(clockTimer);
   clockTimer = null;
+  tearAmbient();
   const cb = onDismiss;
   onDismiss = null;
   cb && cb();

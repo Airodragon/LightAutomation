@@ -4,16 +4,16 @@ overview: "Elevate Lights Studio from a dense utility UI into a premium ambient 
 todos:
   - id: tokens-shell
     content: Expand design tokens, type, nav active state, Home-only topbar clock hide
-    status: pending
+    status: completed
   - id: ambient-home
     content: Add ambient.js WebGL layer + restructure Home hero first viewport
-    status: pending
+    status: completed
   - id: motion-overlays
     content: Control Center sheet motion, screensaver ambient, illustration empties
-    status: pending
+    status: completed
   - id: cascade-views
     content: Call two-column, Devices toolbar, Cameras live/offline polish
-    status: pending
+    status: completed
 isProject: false
 ---
 
@@ -87,9 +87,9 @@ Files: [`src/js/controlcenter.js`](src/js/controlcenter.js), [`src/js/notify.js`
 
 ## Implementation order for the executor
 
-1. Tokens + shell (nav/topbar/clock)  
-2. `ambient.js` + Home hero restructure  
-3. Control Center / screensaver / illustrations  
-4. Call / Devices / Cameras cascade  
+1. Tokens + shell (nav/topbar/clock)
+2. `ambient.js` + Home hero restructure
+3. Control Center / screensaver / illustrations
+4. Call / Devices / Cameras cascade
 
 Ship after Phase 2 is visibly “premium”; Phases 3–4 are polish on the same system.

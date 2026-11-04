@@ -27,15 +27,26 @@ export function createDevices() {
   makeSortable(list, { item: ".item", handle: ".handle", group: "devlist", onDrop: ({ keys }) => reorderSubset(keys) });
   const empty = h("div", { class: "empty" }, h("h3", null, "Nothing here"), h("p", null, "Add devices to get started."));
 
+  const menu = h("div", { class: "devices-menu" },
+    h("button", { type: "button" }, "Scan network"),
+    h("button", { type: "button" }, "Remove offline"));
+  menu.children[0].addEventListener("click", () => { menu.classList.remove("on"); openAddDevice("scan"); });
+  menu.children[1].addEventListener("click", () => {
+    menu.classList.remove("on");
+    const n = state.devices.filter((d) => !L(d.id).online).length;
+    if (!n) return toast("Every device is online");
+    confirmBox("Remove offline devices?", `${n} device${n > 1 ? "s are" : " is"} not responding and will be removed.`, "Remove", () => run("prune_offline", {}, "Removed offline devices"));
+  });
+  const moreBtn = btn("More", { cls: "ghost small", icon: "chevron", size: 14 }, () => menu.classList.toggle("on"));
+  const more = h("div", { class: "devices-more" }, moreBtn, menu);
+  document.addEventListener("pointerdown", (e) => {
+    if (!more.contains(e.target)) menu.classList.remove("on");
+  });
+
   const el = h("section", null,
-    h("div", { class: "row wrap", style: { marginBottom: "16px" } },
+    h("div", { class: "devices-toolbar" },
       search, seg, h("div", { class: "grow" }),
-      btn("Remove offline", { cls: "ghost small" }, () => {
-        const n = state.devices.filter((d) => !L(d.id).online).length;
-        if (!n) return toast("Every device is online");
-        confirmBox("Remove offline devices?", `${n} device${n > 1 ? "s are" : " is"} not responding and will be removed.`, "Remove", () => run("prune_offline", {}, "Removed offline devices"));
-      }),
-      btn("Scan", { icon: "refresh", size: 16 }, () => openAddDevice("scan")),
+      more,
       btn("Add device", { cls: "primary", icon: "plus", size: 16 }, () => openAddDevice("scan"))),
     list, empty);
 

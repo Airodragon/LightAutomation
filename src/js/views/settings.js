@@ -56,7 +56,7 @@ export function createSettings() {
   const webErr = h("div", { class: "banner bad", style: { display: "none" } });
   const webBox = h("div", { class: "card" },
     h("h3", null, "Wall screen & other devices"),
-    h("p", { class: "muted", style: { fontSize: "12.5px", marginBottom: "6px" } }, "Turn this on and open the address below on a tablet, phone or any browser on the same Wi-Fi. It shows the same controls and stays in sync with this app. Keep this Mac awake (or run the hub service) for the screen to work."),
+    h("p", { class: "muted", style: { fontSize: "12.5px", marginBottom: "6px" } }, "Turn this on and open the address below on a tablet or iPhone (same Wi‑Fi). On iPhone: Safari → Share → Add to Home Screen for an app icon. Keep this Mac awake so the wall stays online."),
     row("Enable web access", null, webTg),
     row("Port", null, port),
     row("PIN", "Asks for this PIN before the screen can control anything. Leave empty for no PIN.", pin),
@@ -98,6 +98,11 @@ export function createSettings() {
         h("div", { class: "row" },
           btn("Enter screen mode", { icon: "fullscreen", size: 16 }, () => enterKiosk()),
           btn("Preview screensaver", { cls: "small" }, () => startScreensaver()))),
+      row("Arrange home", "Room count, pre-layout, and names. Customize tints anytime from Rooms.",
+        btn("Arrange home…", { cls: "small", icon: "rooms", size: 14 }, async () => {
+          const { openHomeSetup } = await import("./setup.js");
+          openHomeSetup();
+        })),
       row("This wall screen", "Name used for Home Call / intercom.", wallName)),
     webBox,
     haBox,

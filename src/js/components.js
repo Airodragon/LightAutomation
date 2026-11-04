@@ -87,9 +87,10 @@ export function updateDeviceCard(el, d) {
   setClass(el, "on", on && !dead);
   setClass(el, "off-line", dead);
   setStyle(el, "--glow", glowFor(d, l));
-  if (r.kind !== d.kind) {
-    r.kind = d.kind;
-    r.iconBox.replaceChildren(icon(kindIcon(d.kind), 18));
+  const iconKind = /fan/i.test(`${d.kind} ${d.name}`) ? "fan" : kindIcon(d.kind);
+  if (r.kind !== iconKind) {
+    r.kind = iconKind;
+    r.iconBox.replaceChildren(icon(iconKind, 18));
   }
   setText(r.name, d.name);
   setText(r.status, describe(d, l));
@@ -97,10 +98,10 @@ export function updateDeviceCard(el, d) {
   setAttr(r.tg, "aria-pressed", String(on));
   setAttr(r.tg, "aria-label", `Toggle ${d.name}`);
   r.tg.style.display = d.caps.includes("onoff") ? "" : "none";
-  const showDim = d.caps.includes("dim") && !dead;
+  const showDim = d.caps.includes("dim") && !dead && d.kind === "light";
   r.wrap.style.display = showDim ? "" : "none";
   if (showDim) { setSlider(r.sl, l.brightness ?? 50); setAttr(r.sl, "aria-label", `${d.name} brightness`); }
-  setText(r.tag, d.driver === "ha" ? "HA" : d.driver === "net" ? "Net" : "");
+  setText(r.tag, d.driver === "ha" ? "HA" : d.driver === "net" ? "Net" : d.kind === "fan" || /fan/i.test(d.name) ? "Fan" : d.kind === "climate" ? "AC" : "");
   const showClimate = d.kind === "climate" && !dead;
   r.climate.style.display = showClimate ? "" : "none";
   if (showClimate) setText(r.tval, l.target != null ? `${l.target}°` : "–");
@@ -129,9 +130,10 @@ export function updateMini(el, d) {
   r.id = d.id;
   setClass(el, "on", !!l.on && !!l.online);
   setStyle(el, "--glow", glowFor(d, l));
-  if (r.kind !== d.kind) {
-    r.kind = d.kind;
-    r.ic.replaceChildren(icon(kindIcon(d.kind), 18));
+  const iconKind = /fan/i.test(`${d.kind} ${d.name}`) ? "fan" : kindIcon(d.kind);
+  if (r.kind !== iconKind) {
+    r.kind = iconKind;
+    r.ic.replaceChildren(icon(iconKind, 18));
   }
   setText(r.name, d.name);
   setText(r.sub, describe(d, l));

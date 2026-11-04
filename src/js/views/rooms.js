@@ -4,6 +4,8 @@ import { run, setGroup } from "../actions.js";
 import { miniRow, updateMini, toggle } from "../components.js";
 import { makeSortable } from "../sortable.js";
 import { reorderSubset } from "./dashboard.js";
+import { roomMetaFor } from "../roommeta.js";
+import { openRoomCustomize } from "./setup.js";
 
 export function onDrop({ container, keys, key }) {
   const room = container.dataset.room || "";
@@ -24,18 +26,20 @@ function makeRoom(name) {
   const real = name !== "";
   const head = h("div", { class: "room-head" },
     h("div", { class: "grow" }, title, count),
-    real ? h("button", { class: "btn icon ghost small", title: "Rename", onClick: () => promptBox("Rename room", "Room name", name, "Rename", (v) => run("room_rename", { from: name, to: v })) }, icon("edit", 15)) : null,
-    real ? h("button", { class: "btn icon ghost small", title: "Delete room", onClick: () => confirmBox("Delete room?", `Devices in ${name} will become unassigned.`, "Delete", () => run("room_delete", { name })) }, icon("trash", 15)) : null,
+    real ? h("button", { class: "btn icon ghost small", title: "Customize", onClick: () => openRoomCustomize(el._name) }, icon("sparkles", 15)) : null,
+    real ? h("button", { class: "btn icon ghost small", title: "Rename", onClick: () => promptBox("Rename room", "Room name", el._name, "Rename", (v) => run("room_rename", { from: el._name, to: v })) }, icon("edit", 15)) : null,
+    real ? h("button", { class: "btn icon ghost small", title: "Delete room", onClick: () => confirmBox("Delete room?", `Devices in ${el._name} will become unassigned.`, "Delete", () => run("room_delete", { name: el._name })) }, icon("trash", 15)) : null,
     tg);
   const el = h("div", { class: "room" }, head, body);
   body.dataset.room = name;
   makeSortable(body, { item: ".mini", group: "rooms", onDrop });
   tg.addEventListener("click", () => {
     const on = !el._anyOn;
-    if (el._devs.length) setGroup(real ? `room:${name}` : "all", on);
+    if (el._devs.length) setGroup(real ? `room:${el._name}` : "all", on);
   });
   el._r = { title, count, tg, body };
   el._devs = [];
+  el._name = name;
   return el;
 }
 
@@ -53,11 +57,21 @@ export function createRooms() {
     reconcile(wrap, names, (n) => n || "__none__", makeRoom, (room, name) => {
       const devs = state.devices.filter((d) => (d.room || "") === name);
       room._devs = devs;
+      room._name = name;
+      room._r.body.dataset.room = name;
       room._anyOn = devs.some((d) => L(d.id).on && L(d.id).online);
       setText(room._r.title, name || "No room");
       setText(room._r.count, `${devs.length} device${devs.length === 1 ? "" : "s"} · ${devs.filter((d) => L(d.id).on).length} on`);
       setClass(room._r.tg, "on", room._anyOn);
       room._r.tg.style.display = devs.some((d) => d.caps.includes("onoff")) ? "" : "none";
+      if (name) {
+        const meta = roomMetaFor(name, state.settings);
+        room.dataset.tint = meta.tint;
+        setClass(room, "tinted", true);
+      } else {
+        room.dataset.tint = "";
+        setClass(room, "tinted", false);
+      }
       reconcile(room._r.body, devs, (d) => d.id, miniRow, updateMini);
     });
     // keep the add tile last

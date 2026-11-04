@@ -16,7 +16,7 @@ import { createCall } from "./views/call.js";
 import { openPalette } from "./palette.js";
 import { show as showScreensaver, hide as hideScreensaver, isOn as screensaverOn, refresh as refreshScreensaver } from "./screensaver.js";
 import { registerWall, startHeartbeat } from "./wall.js";
-import { initControlCenter } from "./controlcenter.js";
+import { initControlCenter, isControlOpen, closeControlCenter } from "./controlcenter.js";
 import { wireHubEvents } from "./notify.js";
 
 const ROUTES = [
@@ -79,9 +79,11 @@ function build() {
   const exit = btn("Exit screen mode", { cls: "kiosk-only", icon: "close", size: 16 }, () => exitKiosk());
   const themeBtn = h("button", { class: "btn icon ghost", title: "Toggle theme", onClick: toggleTheme }, icon("sun", 20));
   const addBtn = btn("Add device", { cls: "primary nav-only", icon: "plus", size: 16 }, () => openAddDevice("scan"));
+  addBtn.dataset.role = "top-add";
   const top = h("div", { class: "topbar" },
     h("div", null, titleEl, subEl), h("div", { class: "grow" }), exit, addBtn, themeBtn,
     h("div", { class: "clock" }, timeEl, dateEl));
+  app._addBtn = addBtn;
   bannerEl = h("div", { style: { padding: "0 24px" } });
   viewEl = h("div", { class: "view" });
   app.append(nav, h("main", null, top, bannerEl, viewEl));
@@ -95,11 +97,15 @@ function go(route) {
     views[route] = r[3]();
   }
   closeOverlay("palette");
+  const prev = activeRoute;
   activeRoute = route;
   state.ui.route = route;
+  document.body.dataset.route = route;
   location.hash = "#/" + route;
+  if (prev && prev !== route && views[prev]?.leave) views[prev].leave();
   viewEl.replaceChildren(views[route].el);
   viewEl.scrollTop = 0;
+  if (views[route]?.enter) views[route].enter();
   render();
 }
 
@@ -170,6 +176,9 @@ function render() {
     setText(titleEl, r ? r[1] : "");
     setText(subEl, SUBS[activeRoute] || "");
   }
+  // Devices page owns Add — hide topbar duplicate
+  const addBtn = document.getElementById("app")._addBtn;
+  if (addBtn) addBtn.style.display = activeRoute === "devices" || state.ui.kiosk ? "none" : "";
   // connection banner
   if (!state.connected) {
     if (!bannerEl.firstChild) bannerEl.append(h("div", { class: "banner bad" }, icon("wifi", 20), "Lost connection to the hub. Reconnecting…"));
@@ -254,6 +263,11 @@ document.addEventListener("keydown", (e) => {
       armIdle();
       return;
     }
+    if (isControlOpen()) {
+      e.preventDefault();
+      closeControlCenter();
+      return;
+    }
     if (state.ui.kiosk && !document.getElementById("overlay").children.length) exitKiosk();
   }
 });
@@ -325,6 +339,9 @@ async function start() {
   registerWall();
   startHeartbeat();
   import("./permissions.js").then((m) => m.maybeAskLocationOnce()).catch(() => {});
+  import("./views/setup.js").then((m) => {
+    setTimeout(() => m.maybeOpenSetup(), 900);
+  }).catch(() => {});
   // Safety net: resync every 20 s (skipped while hidden) and instantly when the window wakes up.
   const resync = async () => {
     try { setSnapshot(await call("state")); state.connected = true; } catch (e) { if (!(e instanceof AuthError)) state.connected = false; notify(); }

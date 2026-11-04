@@ -86,6 +86,7 @@ const P = {
   switch: '<rect x="3" y="7" width="18" height="10" rx="5"/><circle cx="16" cy="12" r="2.5"/>',
   sensor: '<path d="M14 14.8V4a2 2 0 0 0-4 0v10.8a4 4 0 1 0 4 0z"/>',
   climate: '<path d="M12 3v18M4.2 7.5l15.6 9M19.8 7.5l-15.6 9"/>',
+  fan: '<path d="M12 12m-2 0a2 2 0 1 0 4 0a2 2 0 1 0-4 0"/><path d="M12 10c2-4 6-5 8-3 0 3-3 5-8 5"/><path d="M12 14c-2 4-6 5-8 3 0-3 3-5 8-5"/><path d="M14 12c4 2 5 6 3 8-3 0-5-3-5-8"/><path d="M10 12c-4-2-5-6-3-8 3 0 5 3 5 8"/>',
   media: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/><path d="M10 8l5 2-5 2z"/>',
   cover: '<path d="M4 4h16v4H4zM6 8v12M18 8v12M10 8v8M14 8v8"/>',
   other: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 12h6"/>',
@@ -109,6 +110,8 @@ const P = {
   film: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/>',
   sparkles: '<path d="M12 3l1.8 4.7L18.5 9.5 13.8 11.3 12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>',
   check: '<path d="M5 12l5 5L20 7"/>',
+  mic: '<path d="M12 3a3 3 0 0 1 3 3v8a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"/><path d="M19 11a7 7 0 0 1-14 0M12 18v3"/>',
+  "mic-off": '<path d="M2 2l20 20"/><path d="M15 9.3V6a3 3 0 0 0-5.7-1.3"/><path d="M9 9v5a3 3 0 0 0 5.1 2.1"/><path d="M19 11a7 7 0 0 1-1.4 4.2M5.2 14A7 7 0 0 1 5 11M12 18v3"/>',
   chevron: '<path d="M9 6l6 6-6 6"/>',
   link: '<path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/>',
   copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/>',
@@ -125,7 +128,7 @@ export function icon(name, size = 20, cls = "") {
   return span;
 }
 
-export const kindIcon = (kind) => ({ light: "bulb", plug: "plug", switch: "switch", sensor: "sensor", climate: "climate", media: "media", cover: "cover", camera: "film", lock: "cover", alarm: "power" }[kind] || "other");
+export const kindIcon = (kind) => ({ light: "bulb", plug: "plug", switch: "switch", sensor: "sensor", climate: "climate", fan: "fan", media: "media", cover: "cover", camera: "film", lock: "cover", alarm: "power" }[kind] || "other");
 
 // ---------- toast ----------
 export function toast(msg, kind = "") {
