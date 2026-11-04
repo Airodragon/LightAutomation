@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Lights Studio discovers and controls Philips WiZ lights and plugs on your local Wi‑Fi network.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_wiz._udp</string>
+	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>Lights Studio uses the camera for Home Call video and wall intercom between rooms.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Lights Studio uses the microphone for Home Call, intercom, and push-to-talk voice commands.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Lights Studio uses your location to show accurate local weather on the Home screen.</string>
+	<key>NSLocationUsageDescription</key>
+	<string>Lights Studio uses your location to show accurate local weather on the Home screen.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Lights Studio reads Now Playing and call status from apps like Music, Spotify, and FaceTime on this Mac.</string>
+</dict>
+</plist>
