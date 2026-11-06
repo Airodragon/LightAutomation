@@ -14,6 +14,7 @@ import { call as hubCall } from "../api.js";
 import { createAmbient } from "../ambient.js";
 import { emptyBlock, illustHouse } from "../illustrations.js";
 import { roomMetaFor } from "../roommeta.js";
+import { openControlCenter } from "../controlcenter.js";
 
 export function reorderSubset(keys) {
   const all = state.devices.map((d) => d.id);
@@ -133,9 +134,11 @@ function updateChip(el, d) {
   const l = L(d.id);
   const r = el._r;
   r.id = d.id;
-  if (r.kind !== d.kind) {
+  const icoSize = document.body.classList.contains("kiosk") ? 20 : 16;
+  if (r.kind !== d.kind || r.icoSize !== icoSize) {
     r.kind = d.kind;
-    r.ico.replaceChildren(icon(d.kind === "plug" || d.kind === "switch" ? "plug" : "bulb", 16));
+    r.icoSize = icoSize;
+    r.ico.replaceChildren(icon(d.kind === "plug" || d.kind === "switch" ? "plug" : "bulb", icoSize));
   }
   setText(r.name, d.name);
   const on = !!(l.on && l.online);
@@ -187,14 +190,34 @@ export function createDashboard() {
   const hero = h("div", { class: "home-hero" },
     clockBlock, weatherLine, presenceBar, nowPlaying.el);
 
+  const favScenesLabel = h("div", { class: "fav-label" }, "Scenes");
+  const favScenes = h("div", { class: "scene-row fav-scenes" });
+  const favScenesPanel = h("div", { class: "fav-panel fav-panel-scenes" }, favScenesLabel, favScenes);
+  const favDevicesLabel = h("div", { class: "fav-label" }, "Devices");
+  const favDevices = h("div", { class: "fav-devices" });
+  const favDevicesPanel = h("div", { class: "fav-panel fav-panel-devices" }, favDevicesLabel, favDevices);
+  const favEmpty = h("div", { class: "fav-empty" });
+  const favHint = h("p", { class: "fav-hint" }, "Swipe up for full control");
+  const favorites = h("div", { class: "home-favorites" },
+    favScenesPanel, favDevicesPanel, favEmpty, favHint);
+
   let ambient = null;
+  let ambientKiosk = null;
   function ensureAmbient() {
+    const wantKiosk = !!state.ui.kiosk;
+    if (ambient && ambientKiosk !== wantKiosk) {
+      ambient.destroy();
+      ambient = null;
+    }
     if (ambient) return ambient;
-    ambient = createAmbient(hero, { fps: 24 });
+    // Screen: wash fills whole tablet. Normal: stay behind the hero band.
+    const host = wantKiosk ? el : hero;
+    ambient = createAmbient(host, { fps: 24 });
+    ambientKiosk = wantKiosk;
     return ambient;
   }
   function destroyAmbient() {
-    if (ambient) { ambient.destroy(); ambient = null; }
+    if (ambient) { ambient.destroy(); ambient = null; ambientKiosk = null; }
   }
 
   const boardList = h("ul", { class: "board-list" });
@@ -296,9 +319,10 @@ export function createDashboard() {
 
   const el = h("section", { class: "home" },
     hero,
+    favorites,
     below,
     roomsHead,
-    h("div", { class: "s12" }, sections, empty));
+    h("div", { class: "s12 home-rooms-block" }, sections, empty));
 
   function kindSet(kind, on) {
     for (const d of state.devices) {
@@ -321,9 +345,10 @@ export function createDashboard() {
 
   let lastEnergy = 0;
   let lastActSig = "";
-  let lastClockMin = "";
 
   function update() {
+    // Keep Screen mode CSS in sync with body.kiosk before ambient host choice
+    if (document.body.classList.contains("kiosk") && !state.ui.kiosk) state.ui.kiosk = true;
     ensureAmbient();
     const s = stats();
     const e = state.energy;
@@ -331,15 +356,11 @@ export function createDashboard() {
     const plugs = state.devices.filter((d) => d.kind === "plug" || d.kind === "switch");
     const metered = state.devices.some((d) => L(d.id).online && L(d.id).watts != null);
 
-    // Clock
+    // Clock — always refresh (avoid blank hero if DOM was remounted)
     const now = new Date();
-    const minKey = `${now.getHours()}:${now.getMinutes()}`;
-    if (minKey !== lastClockMin) {
-      lastClockMin = minKey;
-      setText(clockTime, now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
-      setText(clockDate, now.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" }));
-      setText(clockGreeting, greeting(now.getHours()));
-    }
+    setText(clockTime, now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+    setText(clockDate, now.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" }));
+    setText(clockGreeting, greeting(now.getHours()));
 
     // Weather
     refreshWeather();
@@ -415,8 +436,70 @@ export function createDashboard() {
     if (!secBits.length) secBits.push(h("p", { class: "muted" }, "Import locks, alarms and cameras from Home Assistant."));
     sg.replaceChildren(...secBits);
 
-    // Ambient kiosk: hide dense admin until Control
-    setClass(el, "ambient", !!state.ui.kiosk);
+    const kiosk = !!state.ui.kiosk;
+    setClass(el, "ambient", kiosk);
+    favHint.style.display = kiosk ? "" : "none";
+
+    // Favorites shelf: scenes + devices (Screen fills with favourites first, then quick devices)
+    const scenes = Array.isArray(state.scenes) ? state.scenes : [];
+    const controllable = state.devices.filter((d) => d.kind === "light" || d.kind === "plug" || d.kind === "switch");
+    const starred = controllable.filter((d) => d.favorite);
+    const shelfDevices = kiosk
+      ? [...starred, ...controllable.filter((d) => !d.favorite)].slice(0, 12)
+      : starred;
+    const shelfEmpty = !scenes.length && !shelfDevices.length;
+    setClass(favScenesPanel, "hidden", !scenes.length);
+    setClass(favDevicesPanel, "hidden", !shelfDevices.length);
+    setClass(favEmpty, "hidden", !shelfEmpty);
+    favScenesPanel.style.display = scenes.length ? "" : "none";
+    favDevicesPanel.style.display = shelfDevices.length ? "" : "none";
+    favEmpty.style.display = shelfEmpty ? "" : "none";
+    // Equal-width card columns so tiles expand across the tablet (not left-clustered)
+    if (kiosk && scenes.length) {
+      favScenes.style.setProperty("--fav-cols", String(Math.min(scenes.length, 6)));
+    } else {
+      favScenes.style.removeProperty("--fav-cols");
+    }
+    if (kiosk && shelfDevices.length) {
+      favDevices.style.setProperty("--fav-cols", String(Math.min(Math.max(shelfDevices.length, 3), 6)));
+    } else {
+      favDevices.style.removeProperty("--fav-cols");
+    }
+    if (scenes.length) {
+      reconcile(favScenes, scenes, (sc) => sc.id,
+        (sc) => {
+          const b = h("button", { class: "scene" }, h("div", { class: "si" }), h("div", null, h("div", { class: "sn" }), h("div", { class: "sd" })));
+          b.addEventListener("click", () => applyScene(b._sc));
+          return b;
+        },
+        (b, sc) => {
+          b._sc = sc;
+          if (b.dataset.icon !== (sc.icon || "")) {
+            b.dataset.icon = sc.icon || "";
+            b.querySelector(".si").replaceChildren(icon(sc.icon || "sparkles", kiosk ? 22 : 16));
+          }
+          setText(b.querySelector(".sn"), sc.name);
+          setText(b.querySelector(".sd"), sc.builtin ? "Built-in" : `${(sc.items || []).length} devices`);
+        });
+    }
+    if (shelfDevices.length) {
+      setText(favDevicesLabel, starred.length && kiosk ? "Favorites & lights" : starred.length ? "Favorites" : "Lights & plugs");
+      reconcile(favDevices, shelfDevices, (d) => d.id, chipCard, updateChip);
+    }
+    if (shelfEmpty) {
+      favEmpty.replaceChildren(
+        h("span", null, kiosk
+          ? "Star lights on Devices, or open Control to run the house"
+          : "Star devices to pin them here"),
+        btn(kiosk ? "Open Control" : "Control", {
+          cls: kiosk ? "primary" : "small",
+          icon: "sparkles",
+          size: 16,
+        }, () => openControlCenter())
+      );
+    } else {
+      favEmpty.replaceChildren();
+    }
 
     // KPIs
     const litRooms = [...new Set(lights.filter((d) => L(d.id).on && L(d.id).online).map((d) => d.room || "No room"))];

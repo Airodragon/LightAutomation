@@ -191,6 +191,8 @@ export function createAmbient(host, opts = {}) {
 
   const api = {
     el: wrap,
+    /** True when WebGL is unavailable or reduced-motion forces CSS gradients. */
+    static: !ok,
     setPeriod(p) {
       if (!p || p === period) return;
       period = p;

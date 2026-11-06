@@ -1,7 +1,7 @@
-// Swipe-up Control Center for kiosk / wall screens.
+// Swipe-up Control Center for kiosk / wall screens — full house control on a table tablet.
 import { h, icon, btn } from "./dom.js";
-import { state } from "./store.js";
-import { applyScene, setDevice } from "./actions.js";
+import { state, L } from "./store.js";
+import { applyScene, setDevice, toggleDevice, fmtW } from "./actions.js";
 import { PRESENCE, presenceMode, setPresence } from "./wall.js";
 import { openOutputsPicker } from "./views/nowplaying.js";
 
@@ -24,6 +24,10 @@ export function closeControlCenter() {
     try { lastFocus.focus(); } catch (_) {}
   }
   lastFocus = null;
+  // Rearm idle after dismissing Control on a wall tablet
+  if (state.ui.kiosk) {
+    import("./app.js").then((m) => m.armIdle && m.armIdle()).catch(() => {});
+  }
 }
 
 export function openControlCenter() {
@@ -35,6 +39,13 @@ export function openControlCenter() {
   open = true;
   paint();
   document.addEventListener("keydown", onKey);
+  // Pause screensaver idle while Control is up
+  import("./app.js").then((m) => {
+    if (m.armIdle) {
+      // armIdle no-ops while open; calling clears any pending dim timer first
+      m.armIdle();
+    }
+  }).catch(() => {});
   requestAnimationFrame(() => {
     const first = root._sheet.querySelector("button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])");
     first && first.focus();
@@ -92,10 +103,20 @@ function ensure() {
   return root;
 }
 
+function roomDevices(name) {
+  return state.devices.filter((d) => d.room === name && ["light", "plug", "switch"].includes(d.kind) && d.caps.includes("onoff"));
+}
+
+function setRoom(name, on) {
+  for (const d of roomDevices(name)) setDevice(d.id, { on });
+}
+
 function paint() {
   const sheet = root._sheet;
   const mode = presenceMode();
-  const scenes = (state.scenes || []).slice(0, 6);
+  const scenes = state.scenes || [];
+  const starred = state.devices.filter((d) => d.favorite && (d.kind === "light" || d.kind === "plug" || d.kind === "switch"));
+
   const presenceRow = h("div", { class: "cc-presence" },
     ...PRESENCE.map((p) => {
       const b = h("button", { class: "cc-pill" + (mode === p.id ? " on" : ""), type: "button" }, p.label);
@@ -105,21 +126,63 @@ function paint() {
 
   const sceneRow = h("div", { class: "cc-grid" },
     ...scenes.map((sc) => {
-      const b = h("button", { class: "cc-tile", type: "button" }, icon(sc.icon || "sparkles", 18), sc.name);
+      const b = h("button", { class: "cc-tile", type: "button" }, icon(sc.icon || "sparkles", 18),
+        h("span", { class: "t" }, sc.name));
       b.addEventListener("click", () => { applyScene(sc); closeControlCenter(); });
       return b;
     }));
 
-  sheet.replaceChildren(
+  const favRow = h("div", { class: "cc-favs" },
+    ...starred.map((d) => {
+      const l = L(d.id);
+      const on = !!(l.on && l.online);
+      let line = !l.online ? "Offline" : on ? "On" : "Off";
+      if (on && d.kind === "light" && l.brightness != null) line = `${Math.round(l.brightness)}%`;
+      if (on && l.watts != null) line += ` · ${fmtW(l.watts)}`;
+      if (d.room) line = `${d.room} · ${line}`;
+      const b = h("button", {
+        class: "cc-fav" + (on ? " on" : ""),
+        type: "button",
+        "aria-pressed": String(on),
+      }, h("span", { class: "t" }, d.name), h("span", { class: "s" }, line));
+      b.addEventListener("click", () => { toggleDevice(d.id); requestAnimationFrame(paint); });
+      return b;
+    }));
+
+  const rooms = (state.rooms || []).filter((r) => roomDevices(r).length);
+  const roomList = h("div", { class: "cc-rooms" },
+    ...rooms.map((name) => {
+      const devs = roomDevices(name);
+      const onCount = devs.filter((d) => L(d.id).on && L(d.id).online).length;
+      const row = h("div", { class: "cc-room" },
+        h("div", { class: "name" }, name),
+        h("div", { class: "cc-room-actions" },
+          btn("On", { cls: "small", icon: "sun", size: 14 }, () => { setRoom(name, true); paint(); }),
+          btn("Off", { cls: "small", icon: "power", size: 14 }, () => { setRoom(name, false); paint(); })),
+        h("div", { class: "sub" }, `${onCount} of ${devs.length} on`));
+      return row;
+    }));
+
+  const children = [
     h("div", { class: "cc-handle" }),
     h("div", { class: "cc-title" }, "Control"),
     h("div", { class: "eyebrow" }, "Presence"),
     presenceRow,
-    scenes.length ? h("div", { class: "eyebrow", style: { marginTop: "14px" } }, "Scenes") : null,
-    scenes.length ? sceneRow : null,
-    h("div", { class: "cc-actions" },
+  ];
+  if (scenes.length) {
+    children.push(h("div", { class: "eyebrow cc-section" }, "Scenes"), sceneRow);
+  }
+  if (starred.length) {
+    children.push(h("div", { class: "eyebrow cc-section" }, "Favorites"), favRow);
+  }
+  if (rooms.length) {
+    children.push(h("div", { class: "eyebrow cc-section" }, "Rooms"), roomList);
+  }
+  children.push(
+    h("div", { class: "cc-actions cc-section" },
       btn("All lights off", { cls: "small", icon: "power", size: 14 }, () => {
         for (const d of state.devices) if (d.kind === "light" && d.caps.includes("onoff")) setDevice(d.id, { on: false });
+        paint();
       }),
       btn("Music outputs", { cls: "small", icon: "wifi", size: 14 }, () => { openOutputsPicker(); closeControlCenter(); }),
       btn("Calls", { cls: "small", icon: "media", size: 14 }, () => { location.hash = "#/call"; closeControlCenter(); }),
@@ -138,6 +201,8 @@ function paint() {
           closeControlCenter();
           (await import("./app.js")).enterKiosk();
         })));
+
+  sheet.replaceChildren(...children);
 }
 
 export function initControlCenter() {

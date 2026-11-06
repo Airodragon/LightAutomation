@@ -149,16 +149,21 @@ function toggleTheme() {
 }
 
 function render() {
-  if (!state.ready) return;
-  const theme = currentTheme();
-  if (document.documentElement.dataset.theme !== theme) {
-    document.documentElement.dataset.theme = theme;
-    const meta = document.querySelector('meta[name="theme-color"]');
-    meta && meta.setAttribute("content", theme === "dark" ? "#121418" : "#eef1f5");
+  // Keep Screen mode body class in sync even before the first snapshot
+  setClass(document.body, "kiosk", !!state.ui.kiosk);
+
+  if (state.ready) {
+    const theme = currentTheme();
+    if (document.documentElement.dataset.theme !== theme) {
+      document.documentElement.dataset.theme = theme;
+      const meta = document.querySelector('meta[name="theme-color"]');
+      meta && meta.setAttribute("content", theme === "dark" ? "#121418" : "#eef1f5");
+    }
+    const pref = themePreference();
+    document.getElementById("app")._themeBtn.replaceChildren(icon(pref === "auto" ? "clock" : theme === "dark" ? "sun" : "moon", 20));
+    document.getElementById("app")._themeBtn.title = pref === "auto" ? "Theme: Auto (time of day)" : pref === "dark" ? "Theme: Dark" : "Theme: Light";
   }
-  const pref = themePreference();
-  document.getElementById("app")._themeBtn.replaceChildren(icon(pref === "auto" ? "clock" : theme === "dark" ? "sun" : "moon", 20));
-  document.getElementById("app")._themeBtn.title = pref === "auto" ? "Theme: Auto (time of day)" : pref === "dark" ? "Theme: Dark" : "Theme: Light";
+
   const s = stats();
   for (const [id, b] of Object.entries(navEls)) {
     setClass(b, "active", id === activeRoute);
@@ -183,8 +188,9 @@ function render() {
   if (!state.connected) {
     if (!bannerEl.firstChild) bannerEl.append(h("div", { class: "banner bad" }, icon("wifi", 20), "Lost connection to the hub. Reconnecting…"));
   } else if (bannerEl.firstChild) bannerEl.replaceChildren();
+  // Always paint the active view (clock / Screen ambient) even before hub snapshot
   views[activeRoute] && views[activeRoute].update(state);
-  refreshDetail();
+  if (state.ready) refreshDetail();
   if (screensaverOn()) refreshScreensaver();
 }
 
@@ -197,6 +203,10 @@ function palette() {
 document.addEventListener("keydown", (e) => {
   const typing = /^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || "");
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); palette(); }
+  else if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "f" && !typing) {
+    e.preventDefault();
+    toggleKiosk();
+  }
   else if (e.key === "/" && !typing && !e.metaKey && !e.ctrlKey) { e.preventDefault(); palette(); }
 });
 
@@ -206,11 +216,14 @@ let dimTimer = null;
 export async function enterKiosk() {
   state.ui.kiosk = true;
   document.body.classList.add("kiosk");
+  document.body.dataset.kioskFresh = "1";
   closeOverlay();
+  closeControlCenter();
   hideScreensaver();
   go("dashboard");
   setFullscreen(true).catch(() => {});
   armIdle();
+  notify();
 }
 
 export async function exitKiosk() {
@@ -236,11 +249,16 @@ function idleMs() {
   return Math.max(15, Number(secs) || 60) * 1000;
 }
 
-function armIdle() {
+export function armIdle() {
   clearTimeout(dimTimer);
   if (!state.ui.kiosk || state.settings.idle_dim === false) return;
-  if (screensaverOn()) return;
-  dimTimer = setTimeout(() => showScreensaver(() => armIdle()), idleMs());
+  if (screensaverOn() || isControlOpen()) return;
+  // Give the tablet hub a moment after enter / wake before dimming
+  const ms = Math.max(idleMs(), document.body.dataset.kioskFresh === "1" ? 45000 : 0);
+  if (document.body.dataset.kioskFresh === "1") {
+    setTimeout(() => { delete document.body.dataset.kioskFresh; }, 45000);
+  }
+  dimTimer = setTimeout(() => showScreensaver(() => armIdle()), ms);
 }
 
 ["pointerdown", "keydown", "touchstart", "pointermove"].forEach((ev) =>
@@ -285,10 +303,7 @@ function askPin() {
 // ---------- start ----------
 async function start() {
   build();
-  if (new URLSearchParams(location.search).has("kiosk")) {
-    state.ui.kiosk = true;
-    document.body.classList.add("kiosk");
-  }
+  const bootKiosk = new URLSearchParams(location.search).has("kiosk");
   const initial = (location.hash || "").replace("#/", "");
   go(ROUTES.some((r) => r[0] === initial) ? initial : "dashboard");
   window.addEventListener("hashchange", () => {
@@ -338,6 +353,8 @@ async function start() {
   initControlCenter();
   registerWall();
   startHeartbeat();
+  // Enter Screen mode fully after state is ready so Home gets .ambient + idle/fullscreen
+  if (bootKiosk) await enterKiosk();
   import("./permissions.js").then((m) => m.maybeAskLocationOnce()).catch(() => {});
   import("./views/setup.js").then((m) => {
     setTimeout(() => m.maybeOpenSetup(), 900);
